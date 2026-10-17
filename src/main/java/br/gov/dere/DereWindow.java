@@ -2,50 +2,842 @@ package br.gov.dere;
 
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.node.*;
-import javax.swing.*; import javax.swing.border.*; import javax.swing.table.*; import java.awt.*; import java.awt.event.*; import java.nio.file.*; import java.util.*; import java.util.List;
+import javax.swing.*;
+import javax.swing.border.*;
+import javax.swing.table.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.nio.file.*;
+import java.util.*;
+import java.util.List;
 
 final class DereWindow extends JFrame {
- private final Color ink=new Color(28,42,59), muted=new Color(101,119,139), blue=new Color(36,99,160), canvas=new Color(245,248,251);
- private final List<Path> files=new ArrayList<>(); private final Map<Path,String> eventStatuses=new LinkedHashMap<>();
- private final DefaultTableModel workModel=new DefaultTableModel(new Object[]{"Evento XML","Status"},0){public boolean isCellEditable(int r,int c){return false;}};
- private final JTable workTable=new JTable(workModel); private final JTextArea activityLog=new JTextArea(); private JLabel batchIndicator;
- private final DefaultTableModel table=new DefaultTableModel(new Object[]{"Protocolo","CNPJ base","Enviado em","Situação"},0){public boolean isCellEditable(int r,int c){return false;}};
- private Path batchPath; private List<Path> batchFiles=new ArrayList<>(); private String batchText="Sem lote preparado", batchProtocol=""; private final JLabel status=new JLabel(" Pronto para começar");
- DereWindow(){super("DeRE • Gestão de eventos"); restoreWorkflow(); setDefaultCloseOperation(EXIT_ON_CLOSE); setMinimumSize(new Dimension(1020,720)); setSize(1180,790); setLocationRelativeTo(null); getContentPane().setBackground(canvas); setLayout(new BorderLayout()); add(header(),BorderLayout.NORTH); add(workspace(),BorderLayout.CENTER); add(footer(),BorderLayout.SOUTH); refreshTable(); refreshWorkTable(); }
- private JComponent header(){JPanel p=new JPanel(new BorderLayout());p.setBackground(Color.WHITE);p.setBorder(new EmptyBorder(20,28,18,28));JPanel l=new JPanel(new BorderLayout(14,0));l.setOpaque(false);JLabel icon=new JLabel("D",SwingConstants.CENTER);icon.setOpaque(true);icon.setBackground(blue);icon.setForeground(Color.WHITE);icon.setFont(new Font("SansSerif",Font.BOLD,24));icon.setPreferredSize(new Dimension(48,48));icon.setBorder(new EmptyBorder(4,4,4,4));JPanel titles=new JPanel();titles.setOpaque(false);titles.setLayout(new BoxLayout(titles,BoxLayout.Y_AXIS));JLabel title=new JLabel("DeRE  /  Central de transmissão");title.setFont(new Font("SansSerif",Font.BOLD,20));title.setForeground(ink);JLabel sub=new JLabel("Importe, valide, assine e acompanhe seus eventos em etapas.");sub.setForeground(muted);sub.setFont(new Font("SansSerif",Font.PLAIN,13));titles.add(title);titles.add(Box.createVerticalStrut(4));titles.add(sub);l.add(icon,BorderLayout.WEST);l.add(titles);JLabel env=new JLabel(Store.config().path("ambiente").asText("Produção Restrita").toUpperCase());env.setOpaque(true);env.setBackground(new Color(232,241,250));env.setForeground(blue);env.setFont(new Font("SansSerif",Font.BOLD,11));env.setBorder(new EmptyBorder(8,12,8,12));p.add(l,BorderLayout.WEST);p.add(env,BorderLayout.EAST);return p;}
- private JComponent workspace(){JTabbedPane tabs=new JTabbedPane();tabs.setBorder(new EmptyBorder(0,18,10,18));tabs.addTab("  Eventos e transmissão  ", workflow());tabs.addTab("  Protocolos e retornos  ",protocols());tabs.addTab("  Parâmetros  ",settings());return tabs;}
- private JComponent workflow(){JPanel root=new JPanel(new BorderLayout(18,12));root.setOpaque(false);root.setBorder(new EmptyBorder(14,10,8,10));JPanel top=card(new BorderLayout());JPanel label=new JPanel();label.setOpaque(false);label.setLayout(new BoxLayout(label,BoxLayout.Y_AXIS));label.add(section("1. Arquivos de eventos"));label.add(Box.createVerticalStrut(4));label.add(hint("Adicione XMLs DeRE. Escolha o certificado na ação Assinar eventos."));JButton add=button("＋  Importar XMLs",true);add.addActionListener(e->importFiles());top.add(label,BorderLayout.CENTER);top.add(add,BorderLayout.EAST);root.add(top,BorderLayout.NORTH);
-  JPanel mid=new JPanel(new GridLayout(1,2,16,0));mid.setOpaque(false);JPanel listCard=card(new BorderLayout(0,10));JPanel fileHeader=new JPanel(new BorderLayout());fileHeader.setOpaque(false);fileHeader.add(section("Fila de eventos"),BorderLayout.WEST);batchIndicator=new JLabel(batchStatusText());batchIndicator.setOpaque(true);batchIndicator.setBackground(new Color(232,241,250));batchIndicator.setForeground(blue);batchIndicator.setBorder(new EmptyBorder(6,9,6,9));batchIndicator.setFont(new Font("SansSerif",Font.BOLD,11));fileHeader.add(batchIndicator,BorderLayout.EAST);listCard.add(fileHeader,BorderLayout.NORTH);workTable.setRowHeight(34);workTable.setFillsViewportHeight(true);workTable.getTableHeader().setFont(new Font("SansSerif",Font.BOLD,12));workTable.getColumnModel().getColumn(1).setPreferredWidth(150);JScrollPane scroll=new JScrollPane(workTable);scroll.setBorder(new LineBorder(new Color(231,236,241)));listCard.add(scroll);JButton remove=button("Remover selecionado",false);remove.addActionListener(e->{int row=workTable.getSelectedRow();if(row>=0){Path p=files.remove(workTable.convertRowIndexToModel(row));eventStatuses.remove(p);persistWorkflow();refreshWorkTable();recordActivity("Removido da fila: "+p.getFileName());}});listCard.add(remove,BorderLayout.SOUTH);
-  JPanel actions=card(new BorderLayout(0,12));actions.add(section("Ações independentes"),BorderLayout.NORTH);JPanel grid=new JPanel(new GridLayout(0,1,0,8));grid.setOpaque(false);addAction(grid,"2   Assinar eventos","Escolha um certificado PKCS#12 para esta operação.",this::signFiles);addAction(grid,"3   Validar XMLs contra XSD","Valida o evento assinado usando o schema oficial.",this::validateAll);addAction(grid,"4   Montar lote XML","Agrupa eventos assinados e valida o envelope.",this::buildBatch);addAction(grid,"5   Transmitir lote","Envia o lote preparado e grava o protocolo recebido.",this::submitBatch);actions.add(grid);mid.add(listCard);mid.add(actions);root.add(mid,BorderLayout.CENTER);JPanel activity=card(new BorderLayout(0,6));JPanel activityHeader=new JPanel(new BorderLayout());activityHeader.setOpaque(false);activityHeader.add(section("Atividade recente"),BorderLayout.WEST);activityHeader.add(hint("O protocolo confirma recebimento; consulte-o para saber o resultado final."),BorderLayout.EAST);activity.add(activityHeader,BorderLayout.NORTH);activityLog.setEditable(false);activityLog.setFont(new Font(Font.MONOSPACED,Font.PLAIN,11));activityLog.setLineWrap(true);activityLog.setWrapStyleWord(true);JScrollPane logScroll=new JScrollPane(activityLog);logScroll.setPreferredSize(new Dimension(200,78));logScroll.setBorder(new LineBorder(new Color(231,236,241)));activity.add(logScroll,BorderLayout.CENTER);root.add(activity,BorderLayout.SOUTH);return root; }
- private void addAction(JPanel parent,String name,String desc,Runnable run){JPanel row=new JPanel(new BorderLayout(12,0));row.setBackground(new Color(249,251,253));row.setBorder(new CompoundBorder(new LineBorder(new Color(231,236,241)),new EmptyBorder(8,10,8,8)));JPanel txt=new JPanel();txt.setOpaque(false);txt.setLayout(new BoxLayout(txt,BoxLayout.Y_AXIS));JLabel a=new JLabel(name);a.setForeground(ink);a.setFont(new Font("SansSerif",Font.BOLD,13));JLabel b=new JLabel(desc);b.setForeground(muted);b.setFont(new Font("SansSerif",Font.PLAIN,11));txt.add(a);txt.add(Box.createVerticalStrut(3));txt.add(b);JButton go=button("Executar",false);go.addActionListener(e->run.run());row.add(txt);row.add(go,BorderLayout.EAST);parent.add(row);}
- private JComponent protocols(){JPanel p=card(new BorderLayout(0,14));JPanel bar=new JPanel(new BorderLayout());bar.setOpaque(false);JPanel labels=new JPanel();labels.setOpaque(false);labels.setLayout(new BoxLayout(labels,BoxLayout.Y_AXIS));labels.add(section("Histórico de transmissão"));labels.add(Box.createVerticalStrut(5));labels.add(hint("Consulte novamente um protocolo para atualizar a situação dos eventos."));JButton consult=button("Consultar protocolo selecionado",true);consult.addActionListener(e->consultSelected());bar.add(labels);bar.add(consult,BorderLayout.EAST);p.add(bar,BorderLayout.NORTH);JTable t=new JTable(table);t.setRowHeight(35);t.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);t.getTableHeader().setFont(new Font("SansSerif",Font.BOLD,12));t.setFillsViewportHeight(true);p.add(new JScrollPane(t),BorderLayout.CENTER);JButton manual=button("Consultar por número…",false);manual.addActionListener(e->{String x=JOptionPane.showInputDialog(this,"Número do protocolo:");if(x!=null&&!x.isBlank())doConsult(x.trim());});p.add(manual,BorderLayout.SOUTH);return p;}
- private JComponent settings(){ObjectNode c=Store.config();JPanel outer=new JPanel(new BorderLayout());outer.setOpaque(false);JPanel p=card(new GridBagLayout());GridBagConstraints g=new GridBagConstraints();g.insets=new Insets(7,8,7,8);g.fill=GridBagConstraints.HORIZONTAL;g.weightx=1;g.gridx=0;g.gridy=0;JComboBox<String> env=new JComboBox<>(new String[]{"Produção Restrita","Produção"});env.setSelectedItem(c.path("ambiente").asText("Produção Restrita"));addField(p,g,"Ambiente DeRE",env);JTextField apiBase=new JTextField(c.path("apiBase").asText("https://api.receitafederal.gov.br/prr-dere"),32);addField(p,g,"URL base da API DeRE",apiBase);JTextField client=new JTextField(c.path("clientId").asText(),28);addField(p,g,"Client ID Receita Integra",client);JPasswordField secret=new JPasswordField(c.path("clientSecret").asText(),28);addField(p,g,"Client secret",secret);JTextField cnpj=new JTextField(c.path("cnpj").asText(),28);addField(p,g,"CNPJ da empresa (14 caracteres)",cnpj);JTextField cert=new JTextField(c.path("certificado").asText(),22);JButton choose=button("Selecionar…",false);choose.addActionListener(e->{JFileChooser fc=new JFileChooser();if(fc.showOpenDialog(this)==JFileChooser.APPROVE_OPTION)cert.setText(fc.getSelectedFile().getAbsolutePath());});JPanel cp=new JPanel(new BorderLayout(8,0));cp.setOpaque(false);cp.add(cert);cp.add(choose,BorderLayout.EAST);addField(p,g,"Certificado padrão (.p12/.pfx)",cp);JButton manage=button("Gerenciar certificados por empresa…",false);manage.addActionListener(e->manageCertificates());g.gridx=1;g.gridy++;p.add(manage,g);JButton save=button("Salvar parâmetros",true);save.addActionListener(e->{try{ObjectNode n=Store.JSON.createObjectNode();n.put("ambiente",(String)env.getSelectedItem());n.put("apiBase",apiBase.getText().trim());n.put("clientId",client.getText().trim());n.put("clientSecret",new String(secret.getPassword()));n.put("cnpj",cnpj.getText().trim());n.put("certificado",cert.getText().trim());n.set("certificados",Store.config().path("certificados").deepCopy());Store.write(Store.CONFIG,n);JOptionPane.showMessageDialog(this,"Parâmetros salvos em "+Store.CONFIG);setStatus("Parâmetros atualizados");}catch(Exception ex){error(ex);}});g.gridx=1;g.gridy++;p.add(save,g);JLabel warning=hint("A URL padrão é a de Produção Restrita documentada. Confirme a URL oficial antes de usar Produção. Credenciais em ~/.dere-desktop/config.json.");g.gridy++;p.add(warning,g);outer.add(p,BorderLayout.NORTH);return outer;}
- private void addField(JPanel p,GridBagConstraints g,String label,JComponent input){g.gridx=0;g.weightx=0;JLabel l=new JLabel(label);l.setForeground(ink);p.add(l,g);g.gridx=1;g.weightx=1;p.add(input,g);g.gridy++;}
- private JPanel card(LayoutManager lm){JPanel p=new JPanel(lm);p.setBackground(Color.WHITE);p.setBorder(new CompoundBorder(new LineBorder(new Color(228,234,240)),new EmptyBorder(16,18,16,18)));return p;}
- private JLabel section(String s){JLabel l=new JLabel(s);l.setFont(new Font("SansSerif",Font.BOLD,15));l.setForeground(ink);return l;} private JLabel hint(String s){JLabel l=new JLabel(s);l.setFont(new Font("SansSerif",Font.PLAIN,12));l.setForeground(muted);return l;}
- private JButton button(String s,boolean primary){JButton b=new JButton(s);b.setFont(new Font("SansSerif",Font.BOLD,12));if(primary){b.setBackground(blue);b.setForeground(Color.WHITE);b.setBorderPainted(false);}return b;}
- private JPanel footer(){JPanel p=new JPanel(new BorderLayout());p.setBackground(new Color(250,252,254));p.setBorder(new CompoundBorder(new MatteBorder(1,0,0,0,new Color(228,234,240)),new EmptyBorder(8,16,8,16)));status.setForeground(muted);status.setFont(new Font("SansSerif",Font.PLAIN,12));p.add(status,BorderLayout.WEST);p.add(new JLabel("Java 21  •  XSD oficial  •  XMLDSig"),BorderLayout.EAST);return p;}
- private void setStatus(String s){status.setText("  "+s);} private void error(Exception e){e.printStackTrace();setStatus("Ação não concluída");recordActivity("Falha: "+Objects.toString(e.getMessage(),e.getClass().getSimpleName()));JOptionPane.showMessageDialog(this,e.getMessage(),"Não foi possível concluir",JOptionPane.ERROR_MESSAGE);}
- private void restoreWorkflow(){try{ObjectNode s=Store.state();s.path("eventStatuses").fields().forEachRemaining(e->{try{eventStatuses.put(Path.of(e.getKey()),e.getValue().asText());}catch(Exception ignored){}});for(JsonNode n:s.path("workflowFiles"))try{Path p=Path.of(n.asText());if(Files.exists(p))files.add(p);}catch(Exception ignored){}for(Path p:files)try{org.w3c.dom.Document d=DereService.parse(p);boolean signed=d.getElementsByTagNameNS(javax.xml.crypto.dsig.XMLSignature.XMLNS,"Signature").getLength()>0;String old=eventStatuses.getOrDefault(p,"Importado");if(!signed&&List.of("Assinado","Válido","No lote").contains(old))eventStatuses.put(p,"Importado");else if(signed&&"Importado".equals(old))eventStatuses.put(p,"Assinado");}catch(Exception ignored){}for(JsonNode n:s.path("batchFiles"))try{Path p=Path.of(n.asText());if(Files.exists(p))batchFiles.add(p);}catch(Exception ignored){}if(s.path("batchPath").isTextual()&&Files.exists(Path.of(s.path("batchPath").asText())))batchPath=Path.of(s.path("batchPath").asText());batchText=s.path("batchStatus").asText("Sem lote preparado");batchProtocol=s.path("batchProtocol").asText("");for(JsonNode n:s.path("atividade"))activityLog.append(n.asText()+"\n");activityLog.setCaretPosition(activityLog.getDocument().getLength());persistWorkflow();}catch(Exception ignored){}}
- private void persistWorkflow(){try{ObjectNode s=Store.state(), statuses=Store.JSON.createObjectNode();eventStatuses.forEach((p,v)->statuses.put(p.toString(),v));ArrayNode paths=Store.JSON.createArrayNode(), batchPathNodes=Store.JSON.createArrayNode();files.forEach(p->paths.add(p.toString()));batchFiles.forEach(p->batchPathNodes.add(p.toString()));s.set("eventStatuses",statuses);s.set("workflowFiles",paths);s.set("batchFiles",batchPathNodes);if(batchPath!=null)s.put("batchPath",batchPath.toString());s.put("batchStatus",batchText);s.put("batchProtocol",batchProtocol);Store.write(Store.STATE,s);}catch(Exception e){setStatus("Não foi possível salvar o estado de trabalho");}}
- private void setEventStatus(Path p,String value){eventStatuses.put(p,value);persistWorkflow();refreshWorkTable();}
- private void setBatchStatus(String value){batchText=value;if(batchIndicator!=null)batchIndicator.setText(value);persistWorkflow();}
- private String batchStatusText(){return batchText;}
- private void recordActivity(String message){String line=java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))+"  "+message;try{ObjectNode s=Store.state();ArrayNode a=s.withArray("atividade");a.add(line);while(a.size()>100)a.remove(0);Store.write(Store.STATE,s);}catch(Exception ignored){}if(activityLog!=null){activityLog.append(line+"\n");activityLog.setCaretPosition(activityLog.getDocument().getLength());}}
- private void refreshWorkTable(){workModel.setRowCount(0);for(Path p:files)workModel.addRow(new Object[]{p.getFileName(),eventStatuses.getOrDefault(p,"Importado")});}
- private void importFiles(){JFileChooser fc=new JFileChooser();fc.setMultiSelectionEnabled(true);fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("XML DeRE","xml"));if(fc.showOpenDialog(this)==JFileChooser.APPROVE_OPTION){int added=0;for(var f:fc.getSelectedFiles()){Path p=f.toPath();if(!files.contains(p)){files.add(p);eventStatuses.put(p,"Importado");added++;}}persistWorkflow();refreshWorkTable();setStatus(added+" arquivo(s) importado(s)");recordActivity("Importados "+added+" XML(s)");}}
- private void manageCertificates(){try{ObjectNode c=Store.config();ArrayNode profiles=c.withArray("certificados");StringBuilder text=new StringBuilder("Certificados cadastrados:\n");for(int i=0;i<profiles.size();i++)text.append(i+1).append(". ").append(profiles.get(i).path("empresa").asText()).append(" — ").append(profiles.get(i).path("arquivo").asText()).append('\n');if(profiles.isEmpty())text.append("(nenhum)\n");Object[] opts={"Adicionar", "Remover", "Fechar"};int choice=JOptionPane.showOptionDialog(this,new JScrollPane(new JTextArea(text.toString(),10,64)),"Certificados por empresa",JOptionPane.DEFAULT_OPTION,JOptionPane.PLAIN_MESSAGE,null,opts,opts[0]);if(choice==0){JFileChooser fc=new JFileChooser();fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("PKCS#12 (.p12, .pfx)","p12","pfx"));if(fc.showOpenDialog(this)!=JFileChooser.APPROVE_OPTION)return;String company=JOptionPane.showInputDialog(this,"Nome da empresa ou CNPJ associado:");if(company==null||company.isBlank())return;ObjectNode profile=Store.JSON.createObjectNode();profile.put("empresa",company.trim());profile.put("arquivo",fc.getSelectedFile().getAbsolutePath());profiles.add(profile);Store.write(Store.CONFIG,c);setStatus("Certificado cadastrado para "+company);}else if(choice==1&&!profiles.isEmpty()){String[] labels=new String[profiles.size()];for(int i=0;i<labels.length;i++)labels[i]=profiles.get(i).path("empresa").asText();int ix=JOptionPane.showOptionDialog(this,"Selecione o certificado a remover:","Remover certificado",JOptionPane.DEFAULT_OPTION,JOptionPane.PLAIN_MESSAGE,null,labels,labels[0]);if(ix>=0){profiles.remove(ix);Store.write(Store.CONFIG,c);}}}catch(Exception e){error(e);}}
- private List<Path> selected(){return new ArrayList<>(files);}
- private void validateAll(){try{if(files.isEmpty())throw new IllegalStateException("Importe pelo menos um evento.");StringBuilder b=new StringBuilder();for(Path p:selected()){try{DereService.validateEvent(p);setEventStatus(p,"Válido");b.append("✓  ").append(p.getFileName()).append(" — válido\n");}catch(Exception ex){setEventStatus(p,"Erro na validação");throw ex;}}JOptionPane.showMessageDialog(this,b.toString(),"Validação XSD",JOptionPane.INFORMATION_MESSAGE);setStatus("Validação XSD concluída");recordActivity("XSD validado: "+files.size()+" evento(s)");}catch(Exception e){error(e);}}
- private void signFiles(){try{List<Path> ps=selected();if(ps.isEmpty())throw new IllegalStateException("Importe pelo menos um evento.");ObjectNode c=Store.config();List<Path> paths=new ArrayList<>();List<String> labels=new ArrayList<>();if(!c.path("certificado").asText().isBlank()){paths.add(Path.of(c.path("certificado").asText()));labels.add("Padrão • "+paths.getLast().getFileName());}for(JsonNode p:c.path("certificados")){Path value=Path.of(p.path("arquivo").asText());paths.add(value);labels.add(p.path("empresa").asText()+" • "+value.getFileName());}Path cert;if(paths.isEmpty()){JFileChooser fc=new JFileChooser();fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("PKCS#12 (.p12, .pfx)","p12","pfx"));if(fc.showOpenDialog(this)!=JFileChooser.APPROVE_OPTION)return;cert=fc.getSelectedFile().toPath();}else{JComboBox<String> combo=new JComboBox<>(labels.toArray(String[]::new));if(JOptionPane.showConfirmDialog(this,combo,"Selecione o certificado para assinar todos os eventos",JOptionPane.OK_CANCEL_OPTION)!=JOptionPane.OK_OPTION)return;cert=paths.get(combo.getSelectedIndex());}JPasswordField pf=new JPasswordField(24);if(JOptionPane.showConfirmDialog(this,pf,"Senha do certificado selecionado",JOptionPane.OK_CANCEL_OPTION)!=JOptionPane.OK_OPTION)return;char[] pw=pf.getPassword();for(Path p:ps){DereService.sign(p,cert,pw);setEventStatus(p,"Assinado");}Arrays.fill(pw,'\0');JOptionPane.showMessageDialog(this,"Eventos assinados: "+ps.size()+"\nCertificado: "+cert.getFileName());setStatus("Assinatura XMLDSig concluída");recordActivity("Assinados "+ps.size()+" evento(s) com "+cert.getFileName());}catch(Exception e){error(e);}}
- private void buildBatch(){try{List<Path> ps=selected();if(ps.isEmpty())throw new IllegalStateException("Importe eventos antes de montar o lote.");ObjectNode c=Store.config();String number=JOptionPane.showInputDialog(this,"CNPJ da empresa (14 caracteres):",c.path("cnpj").asText());if(number==null)return;JFileChooser fc=new JFileChooser();fc.setSelectedFile(new java.io.File("lote-dere.xml"));if(fc.showSaveDialog(this)!=JFileChooser.APPROVE_OPTION)return;batchPath=fc.getSelectedFile().toPath();DereService.makeBatch(ps,number,batchPath);batchFiles=new ArrayList<>(ps);batchProtocol="";c.put("cnpj",number.trim());Store.write(Store.CONFIG,c);for(Path p:ps)setEventStatus(p,"No lote");setBatchStatus("Lote pronto: "+batchPath.getFileName());JOptionPane.showMessageDialog(this,"Lote montado e validado:\n"+batchPath);setStatus("Lote pronto: "+batchPath.getFileName());recordActivity("Lote criado com "+ps.size()+" evento(s): "+batchPath.getFileName());}catch(Exception e){error(e);}}
- private void submitBatch(){try{if(batchPath==null||!Files.exists(batchPath)){JFileChooser fc=new JFileChooser();fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("XML","xml"));if(fc.showOpenDialog(this)!=JFileChooser.APPROVE_OPTION)return;batchPath=fc.getSelectedFile().toPath();}String protocol=DereService.submit(batchPath);String cnpj=Store.config().path("cnpj").asText();Store.record(protocol,cnpj,batchPath.toString());batchProtocol=protocol;setBatchStatus("Recebido • "+protocol);for(Path p:batchFiles)setEventStatus(p,"Transmitido • "+protocol);refreshTable();setStatus("Lote recebido • protocolo "+protocol);recordActivity("Transmitido lote; protocolo "+protocol);JOptionPane.showMessageDialog(this,"Lote recebido pela DeRE.\nProtocolo: "+protocol+"\nA aceitação final depende da consulta de processamento.");}catch(Exception e){error(e);}}
- private void refreshTable(){table.setRowCount(0);ArrayNode a=Store.state().withArray("lotes");for(JsonNode n:a)table.addRow(new Object[]{n.path("protocolo").asText(),n.path("cnpj").asText(),n.path("enviadoEm").asText(),n.path("status").asText()});}
- private void consultSelected(){JTable t=findTable();if(t==null||t.getSelectedRow()<0){JOptionPane.showMessageDialog(this,"Selecione um protocolo da tabela.");return;}doConsult(table.getValueAt(t.getSelectedRow(),0).toString());}
- private JTable findTable(){for(Component c:getContentPane().getComponents())if(c instanceof JTabbedPane tabs){for(int i=0;i<tabs.getTabCount();i++)if(tabs.getTitleAt(i).contains("Protocolos")){return find(tabs.getComponentAt(i));}}return null;}private JTable find(Component c){if(c instanceof JTable t)return t;if(c instanceof Container p)for(Component k:p.getComponents()){JTable t=find(k);if(t!=null)return t;}return null;}
- private void doConsult(String protocol){try{String body=DereService.consult(protocol);Files.createDirectories(Store.OUT);String safe=protocol.replaceAll("[^A-Za-z0-9._-]","_");boolean xml=body.stripLeading().startsWith("<");Path saved=Store.OUT.resolve(safe+(xml?".xml":".json"));Files.writeString(saved,body);String status;String display;if(xml){org.w3c.dom.Document d=DereService.parse(body);org.w3c.dom.NodeList desc=d.getElementsByTagNameNS("*","descResposta"),codes=d.getElementsByTagNameNS("*","cdResposta");String code=codes.getLength()>0?codes.item(0).getTextContent().trim():"";status=desc.getLength()>0?desc.item(0).getTextContent().trim():statusFor(code);status=status.isBlank()?statusFor(code):status;DereService.validate(saved,"retornoLoteDere-v1_0_1.xsd");saveXmlReceipts(d,safe);updateWorkflowStatuses(protocol,status,d,code);display=body;}else{JsonNode result=Store.JSON.readTree(body);status=result.path("situacao").asText(result.path("status").asText("Consultado"));saveReceipts(result,safe);updateWorkflowStatuses(protocol,status,null,"");display=Store.JSON.writerWithDefaultPrettyPrinter().writeValueAsString(result);}ObjectNode s=Store.state();for(JsonNode n:s.withArray("lotes"))if(n.path("protocolo").asText().equals(protocol)){((ObjectNode)n).put("status",status);((ObjectNode)n).put("retorno",saved.toString());}Store.write(Store.STATE,s);refreshTable();JTextArea area=new JTextArea(display,22,78);area.setEditable(false);area.setFont(new Font(Font.MONOSPACED,Font.PLAIN,12));JOptionPane.showMessageDialog(this,new JScrollPane(area),"Retorno do protocolo "+protocol,JOptionPane.INFORMATION_MESSAGE);setStatus("Consulta salva em "+saved);recordActivity("Consultado protocolo "+protocol+": "+status);}catch(Exception e){error(e);}}
- private void updateWorkflowStatuses(String protocol,String loteStatus,org.w3c.dom.Document result,String code){if(!protocol.equals(batchProtocol))return;List<String> perEvent=new ArrayList<>();if(result!=null){org.w3c.dom.NodeList blocks=result.getElementsByTagNameNS("*","retornoEventos");if(blocks.getLength()>0){org.w3c.dom.Node parent=blocks.item(0);for(org.w3c.dom.Node n=parent.getFirstChild();n!=null;n=n.getNextSibling())if(n instanceof org.w3c.dom.Element el&&"evento".equals(el.getLocalName())){org.w3c.dom.NodeList desc=el.getElementsByTagNameNS("*","descResposta");String detail=desc.getLength()>0?desc.item(0).getTextContent().trim():"";perEvent.add(detail.isBlank()?loteStatus:detail);}}}for(int i=0;i<batchFiles.size();i++){String value=i<perEvent.size()?perEvent.get(i):(result==null?loteStatus:statusFor(code));setEventStatus(batchFiles.get(i),value);}if(!loteStatus.isBlank())setBatchStatus(loteStatus+(batchProtocol.isBlank()?"":" • "+batchProtocol));}
- private String statusFor(String code){return switch(code){case "1"->"Aguardando processamento";case "2"->"Processado com sucesso";case "3"->"Processado com erros";case "4"->"Consulta não executada";case "5"->"Protocolo não encontrado";case "7"->"Lote não recebido";case "9"->"Erro interno";default->"Consultado";};}
- private void saveReceipts(JsonNode root,String protocol)throws Exception{List<JsonNode> stack=new ArrayList<>();stack.add(root);java.util.concurrent.atomic.AtomicInteger ix=new java.util.concurrent.atomic.AtomicInteger();String safe=protocol.replaceAll("[^A-Za-z0-9._-]","_");while(!stack.isEmpty()){JsonNode n=stack.remove(stack.size()-1);if(n.isObject()){n.fields().forEachRemaining(e->{if(e.getValue().isContainerNode())stack.add(e.getValue());else if(e.getKey().toLowerCase(Locale.ROOT).contains("recibo")&&!e.getValue().asText().isBlank()){try{Files.writeString(Store.OUT.resolve(safe+"-recibo-"+ix.incrementAndGet()+".txt"),e.getValue().asText());}catch(Exception ignored){}}});}else if(n.isArray())n.forEach(stack::add);}}
- private void saveXmlReceipts(org.w3c.dom.Document doc,String protocol)throws Exception{org.w3c.dom.NodeList all=doc.getElementsByTagName("*");int ix=0;for(int i=0;i<all.getLength();i++){org.w3c.dom.Element e=(org.w3c.dom.Element)all.item(i);if(e.getLocalName()!=null&&e.getLocalName().toLowerCase(Locale.ROOT).contains("recibo")){String value=e.getTextContent().trim();if(!value.isBlank())Files.writeString(Store.OUT.resolve(protocol+"-recibo-"+(++ix)+".txt"),value);}}}
+    private final Color ink = new Color(28, 42, 59), muted = new Color(101, 119, 139), blue = new Color(36, 99, 160),
+            canvas = new Color(245, 248, 251);
+    private final List<Path> files = new ArrayList<>();
+    private final Map<Path, String> eventStatuses = new LinkedHashMap<>();
+    private final DefaultTableModel workModel = new DefaultTableModel(new Object[] { "Evento XML", "Status" }, 0) {
+        public boolean isCellEditable(int r, int c) {
+            return false;
+        }
+    };
+    private final JTable workTable = new JTable(workModel);
+    private final JTextArea activityLog = new JTextArea();
+    private JLabel batchIndicator;
+    private final DefaultTableModel table = new DefaultTableModel(
+            new Object[] { "Protocolo", "CNPJ base", "Enviado em", "Situação" }, 0) {
+        public boolean isCellEditable(int r, int c) {
+            return false;
+        }
+    };
+    private Path batchPath;
+    private List<Path> batchFiles = new ArrayList<>();
+    private String batchText = "Sem lote preparado", batchProtocol = "";
+    private final JLabel status = new JLabel(" Pronto para começar");
+
+    DereWindow() {
+        super("DeRE • Gestão de eventos");
+        restoreWorkflow();
+        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setMinimumSize(new Dimension(1020, 720));
+        setSize(1180, 790);
+        setLocationRelativeTo(null);
+        getContentPane().setBackground(canvas);
+        setLayout(new BorderLayout());
+        add(header(), BorderLayout.NORTH);
+        add(workspace(), BorderLayout.CENTER);
+        add(footer(), BorderLayout.SOUTH);
+        refreshTable();
+        refreshWorkTable();
+    }
+
+    private JComponent header() {
+        JPanel p = new JPanel(new BorderLayout());
+        p.setBackground(Color.WHITE);
+        p.setBorder(new EmptyBorder(20, 28, 18, 28));
+        JPanel l = new JPanel(new BorderLayout(14, 0));
+        l.setOpaque(false);
+        JLabel icon = new JLabel("D", SwingConstants.CENTER);
+        icon.setOpaque(true);
+        icon.setBackground(blue);
+        icon.setForeground(Color.WHITE);
+        icon.setFont(new Font("SansSerif", Font.BOLD, 24));
+        icon.setPreferredSize(new Dimension(48, 48));
+        icon.setBorder(new EmptyBorder(4, 4, 4, 4));
+        JPanel titles = new JPanel();
+        titles.setOpaque(false);
+        titles.setLayout(new BoxLayout(titles, BoxLayout.Y_AXIS));
+        JLabel title = new JLabel("DeRE  /  Central de transmissão");
+        title.setFont(new Font("SansSerif", Font.BOLD, 20));
+        title.setForeground(ink);
+        JLabel sub = new JLabel("Importe, valide, assine e acompanhe seus eventos em etapas.");
+        sub.setForeground(muted);
+        sub.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        titles.add(title);
+        titles.add(Box.createVerticalStrut(4));
+        titles.add(sub);
+        l.add(icon, BorderLayout.WEST);
+        l.add(titles);
+        JLabel env = new JLabel(Store.config().path("ambiente").asText("Produção Restrita").toUpperCase());
+        env.setOpaque(true);
+        env.setBackground(new Color(232, 241, 250));
+        env.setForeground(blue);
+        env.setFont(new Font("SansSerif", Font.BOLD, 11));
+        env.setBorder(new EmptyBorder(8, 12, 8, 12));
+        p.add(l, BorderLayout.WEST);
+        p.add(env, BorderLayout.EAST);
+        return p;
+    }
+
+    private JComponent workspace() {
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.setBorder(new EmptyBorder(0, 18, 10, 18));
+        tabs.addTab("  Eventos e transmissão  ", workflow());
+        tabs.addTab("  Protocolos e retornos  ", protocols());
+        tabs.addTab("  Parâmetros  ", settings());
+        return tabs;
+    }
+
+    private JComponent workflow() {
+        JPanel root = new JPanel(new BorderLayout(18, 12));
+        root.setOpaque(false);
+        root.setBorder(new EmptyBorder(14, 10, 8, 10));
+        JPanel top = card(new BorderLayout());
+        JPanel label = new JPanel();
+        label.setOpaque(false);
+        label.setLayout(new BoxLayout(label, BoxLayout.Y_AXIS));
+        label.add(section("1. Arquivos de eventos"));
+        label.add(Box.createVerticalStrut(4));
+        label.add(hint("Adicione XMLs DeRE. Escolha o certificado na ação Assinar eventos."));
+        JButton add = button("＋  Importar XMLs", true);
+        add.addActionListener(e -> importFiles());
+        top.add(label, BorderLayout.CENTER);
+        top.add(add, BorderLayout.EAST);
+        root.add(top, BorderLayout.NORTH);
+        JPanel mid = new JPanel(new GridLayout(1, 2, 16, 0));
+        mid.setOpaque(false);
+        JPanel listCard = card(new BorderLayout(0, 10));
+        JPanel fileHeader = new JPanel(new BorderLayout());
+        fileHeader.setOpaque(false);
+        fileHeader.add(section("Fila de eventos"), BorderLayout.WEST);
+        batchIndicator = new JLabel(batchStatusText());
+        batchIndicator.setOpaque(true);
+        batchIndicator.setBackground(new Color(232, 241, 250));
+        batchIndicator.setForeground(blue);
+        batchIndicator.setBorder(new EmptyBorder(6, 9, 6, 9));
+        batchIndicator.setFont(new Font("SansSerif", Font.BOLD, 11));
+        fileHeader.add(batchIndicator, BorderLayout.EAST);
+        listCard.add(fileHeader, BorderLayout.NORTH);
+        workTable.setRowHeight(34);
+        workTable.setFillsViewportHeight(true);
+        workTable.getTableHeader().setFont(new Font("SansSerif", Font.BOLD, 12));
+        workTable.getColumnModel().getColumn(1).setPreferredWidth(150);
+        JScrollPane scroll = new JScrollPane(workTable);
+        scroll.setBorder(new LineBorder(new Color(231, 236, 241)));
+        listCard.add(scroll);
+        JButton remove = button("Remover selecionado", false);
+        remove.addActionListener(e -> {
+            int row = workTable.getSelectedRow();
+            if (row >= 0) {
+                Path p = files.remove(workTable.convertRowIndexToModel(row));
+                eventStatuses.remove(p);
+                persistWorkflow();
+                refreshWorkTable();
+                recordActivity("Removido da fila: " + p.getFileName());
+            }
+        });
+        listCard.add(remove, BorderLayout.SOUTH);
+        JPanel actions = card(new BorderLayout(0, 12));
+        actions.add(section("Ações independentes"), BorderLayout.NORTH);
+        JPanel grid = new JPanel(new GridLayout(0, 1, 0, 8));
+        grid.setOpaque(false);
+        addAction(grid, "2   Assinar eventos", "Escolha um certificado PKCS#12 para esta operação.", this::signFiles);
+        addAction(grid, "3   Validar XMLs contra XSD", "Valida o evento assinado usando o schema oficial.",
+                this::validateAll);
+        addAction(grid, "4   Montar lote XML", "Agrupa eventos assinados e valida o envelope.", this::buildBatch);
+        addAction(grid, "5   Transmitir lote", "Envia o lote preparado e grava o protocolo recebido.",
+                this::submitBatch);
+        actions.add(grid);
+        mid.add(listCard);
+        mid.add(actions);
+        root.add(mid, BorderLayout.CENTER);
+        JPanel activity = card(new BorderLayout(0, 6));
+        JPanel activityHeader = new JPanel(new BorderLayout());
+        activityHeader.setOpaque(false);
+        activityHeader.add(section("Atividade recente"), BorderLayout.WEST);
+        activityHeader.add(hint("O protocolo confirma recebimento; consulte-o para saber o resultado final."),
+                BorderLayout.EAST);
+        activity.add(activityHeader, BorderLayout.NORTH);
+        activityLog.setEditable(false);
+        activityLog.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
+        activityLog.setLineWrap(true);
+        activityLog.setWrapStyleWord(true);
+        JScrollPane logScroll = new JScrollPane(activityLog);
+        logScroll.setPreferredSize(new Dimension(200, 78));
+        logScroll.setBorder(new LineBorder(new Color(231, 236, 241)));
+        activity.add(logScroll, BorderLayout.CENTER);
+        root.add(activity, BorderLayout.SOUTH);
+        return root;
+    }
+
+    private void addAction(JPanel parent, String name, String desc, Runnable run) {
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.setBackground(new Color(249, 251, 253));
+        row.setBorder(new CompoundBorder(new LineBorder(new Color(231, 236, 241)), new EmptyBorder(8, 10, 8, 8)));
+        JPanel txt = new JPanel();
+        txt.setOpaque(false);
+        txt.setLayout(new BoxLayout(txt, BoxLayout.Y_AXIS));
+        JLabel a = new JLabel(name);
+        a.setForeground(ink);
+        a.setFont(new Font("SansSerif", Font.BOLD, 13));
+        JLabel b = new JLabel(desc);
+        b.setForeground(muted);
+        b.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        txt.add(a);
+        txt.add(Box.createVerticalStrut(3));
+        txt.add(b);
+        JButton go = button("Executar", false);
+        go.addActionListener(e -> run.run());
+        row.add(txt);
+        row.add(go, BorderLayout.EAST);
+        parent.add(row);
+    }
+
+    private JComponent protocols() {
+        JPanel p = card(new BorderLayout(0, 14));
+        JPanel bar = new JPanel(new BorderLayout());
+        bar.setOpaque(false);
+        JPanel labels = new JPanel();
+        labels.setOpaque(false);
+        labels.setLayout(new BoxLayout(labels, BoxLayout.Y_AXIS));
+        labels.add(section("Histórico de transmissão"));
+        labels.add(Box.createVerticalStrut(5));
+        labels.add(hint("Consulte novamente um protocolo para atualizar a situação dos eventos."));
+        JButton consult = button("Consultar protocolo selecionado", true);
+        consult.addActionListener(e -> consultSelected());
+        bar.add(labels);
+        bar.add(consult, BorderLayout.EAST);
+        p.add(bar, BorderLayout.NORTH);
+        JTable t = new JTable(table);
+        t.setRowHeight(35);
+        t.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        t.getTableHeader().setFont(new Font("SansSerif", Font.BOLD, 12));
+        t.setFillsViewportHeight(true);
+        p.add(new JScrollPane(t), BorderLayout.CENTER);
+        JButton manual = button("Consultar por número…", false);
+        manual.addActionListener(e -> {
+            String x = JOptionPane.showInputDialog(this, "Número do protocolo:");
+            if (x != null && !x.isBlank())
+                doConsult(x.trim());
+        });
+        p.add(manual, BorderLayout.SOUTH);
+        return p;
+    }
+
+    private JComponent settings() {
+        ObjectNode c = Store.config();
+        JPanel outer = new JPanel(new BorderLayout());
+        outer.setOpaque(false);
+        JPanel p = card(new GridBagLayout());
+        GridBagConstraints g = new GridBagConstraints();
+        g.insets = new Insets(7, 8, 7, 8);
+        g.fill = GridBagConstraints.HORIZONTAL;
+        g.weightx = 1;
+        g.gridx = 0;
+        g.gridy = 0;
+        JComboBox<String> env = new JComboBox<>(new String[] { "Produção Restrita", "Produção" });
+        env.setSelectedItem(c.path("ambiente").asText("Produção Restrita"));
+        addField(p, g, "Ambiente DeRE", env);
+        JTextField apiBase = new JTextField(c.path("apiBase").asText("https://api.receitafederal.gov.br/prr-dere"), 32);
+        addField(p, g, "URL base da API DeRE", apiBase);
+        JTextField client = new JTextField(c.path("clientId").asText(), 28);
+        addField(p, g, "Client ID Receita Integra", client);
+        JPasswordField secret = new JPasswordField(c.path("clientSecret").asText(), 28);
+        addField(p, g, "Client secret", secret);
+        JTextField cnpj = new JTextField(c.path("cnpj").asText(), 28);
+        addField(p, g, "CNPJ da empresa (14 caracteres)", cnpj);
+        JTextField cert = new JTextField(c.path("certificado").asText(), 22);
+        JButton choose = button("Selecionar…", false);
+        choose.addActionListener(e -> {
+            JFileChooser fc = new JFileChooser();
+            if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION)
+                cert.setText(fc.getSelectedFile().getAbsolutePath());
+        });
+        JPanel cp = new JPanel(new BorderLayout(8, 0));
+        cp.setOpaque(false);
+        cp.add(cert);
+        cp.add(choose, BorderLayout.EAST);
+        addField(p, g, "Certificado padrão (.p12/.pfx)", cp);
+        JButton manage = button("Gerenciar certificados por empresa…", false);
+        manage.addActionListener(e -> manageCertificates());
+        g.gridx = 1;
+        g.gridy++;
+        p.add(manage, g);
+        JButton save = button("Salvar parâmetros", true);
+        save.addActionListener(e -> {
+            try {
+                ObjectNode n = Store.JSON.createObjectNode();
+                n.put("ambiente", (String) env.getSelectedItem());
+                n.put("apiBase", apiBase.getText().trim());
+                n.put("clientId", client.getText().trim());
+                n.put("clientSecret", new String(secret.getPassword()));
+                n.put("cnpj", cnpj.getText().trim());
+                n.put("certificado", cert.getText().trim());
+                n.set("certificados", Store.config().path("certificados").deepCopy());
+                Store.write(Store.CONFIG, n);
+                JOptionPane.showMessageDialog(this, "Parâmetros salvos em " + Store.CONFIG);
+                setStatus("Parâmetros atualizados");
+            } catch (Exception ex) {
+                error(ex);
+            }
+        });
+        g.gridx = 1;
+        g.gridy++;
+        p.add(save, g);
+        JLabel warning = hint(
+                "A URL padrão é a de Produção Restrita documentada. Confirme a URL oficial antes de usar Produção. Credenciais em ~/.dere-desktop/config.json.");
+        g.gridy++;
+        p.add(warning, g);
+        outer.add(p, BorderLayout.NORTH);
+        return outer;
+    }
+
+    private void addField(JPanel p, GridBagConstraints g, String label, JComponent input) {
+        g.gridx = 0;
+        g.weightx = 0;
+        JLabel l = new JLabel(label);
+        l.setForeground(ink);
+        p.add(l, g);
+        g.gridx = 1;
+        g.weightx = 1;
+        p.add(input, g);
+        g.gridy++;
+    }
+
+    private JPanel card(LayoutManager lm) {
+        JPanel p = new JPanel(lm);
+        p.setBackground(Color.WHITE);
+        p.setBorder(new CompoundBorder(new LineBorder(new Color(228, 234, 240)), new EmptyBorder(16, 18, 16, 18)));
+        return p;
+    }
+
+    private JLabel section(String s) {
+        JLabel l = new JLabel(s);
+        l.setFont(new Font("SansSerif", Font.BOLD, 15));
+        l.setForeground(ink);
+        return l;
+    }
+
+    private JLabel hint(String s) {
+        JLabel l = new JLabel(s);
+        l.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        l.setForeground(muted);
+        return l;
+    }
+
+    private JButton button(String s, boolean primary) {
+        JButton b = new JButton(s);
+        b.setFont(new Font("SansSerif", Font.BOLD, 12));
+        if (primary) {
+            b.setBackground(blue);
+            b.setForeground(Color.WHITE);
+            b.setBorderPainted(false);
+        }
+        return b;
+    }
+
+    private JPanel footer() {
+        JPanel p = new JPanel(new BorderLayout());
+        p.setBackground(new Color(250, 252, 254));
+        p.setBorder(new CompoundBorder(new MatteBorder(1, 0, 0, 0, new Color(228, 234, 240)),
+                new EmptyBorder(8, 16, 8, 16)));
+        status.setForeground(muted);
+        status.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        p.add(status, BorderLayout.WEST);
+        p.add(new JLabel("Java 21  •  XSD oficial  •  XMLDSig"), BorderLayout.EAST);
+        return p;
+    }
+
+    private void setStatus(String s) {
+        status.setText("  " + s);
+    }
+
+    private void error(Exception e) {
+        e.printStackTrace();
+        setStatus("Ação não concluída");
+        recordActivity("Falha: " + Objects.toString(e.getMessage(), e.getClass().getSimpleName()));
+        JOptionPane.showMessageDialog(this, e.getMessage(), "Não foi possível concluir", JOptionPane.ERROR_MESSAGE);
+    }
+
+    private void restoreWorkflow() {
+        try {
+            ObjectNode s = Store.state();
+            s.path("eventStatuses").fields().forEachRemaining(e -> {
+                try {
+                    eventStatuses.put(Path.of(e.getKey()), e.getValue().asText());
+                } catch (Exception ignored) {
+                }
+            });
+            for (JsonNode n : s.path("workflowFiles"))
+                try {
+                    Path p = Path.of(n.asText());
+                    if (Files.exists(p))
+                        files.add(p);
+                } catch (Exception ignored) {
+                }
+            for (Path p : files)
+                try {
+                    org.w3c.dom.Document d = DereService.parse(p);
+                    boolean signed = d.getElementsByTagNameNS(javax.xml.crypto.dsig.XMLSignature.XMLNS, "Signature")
+                            .getLength() > 0;
+                    String old = eventStatuses.getOrDefault(p, "Importado");
+                    if (!signed && List.of("Assinado", "Válido", "No lote").contains(old))
+                        eventStatuses.put(p, "Importado");
+                    else if (signed && "Importado".equals(old))
+                        eventStatuses.put(p, "Assinado");
+                } catch (Exception ignored) {
+                }
+            for (JsonNode n : s.path("batchFiles"))
+                try {
+                    Path p = Path.of(n.asText());
+                    if (Files.exists(p))
+                        batchFiles.add(p);
+                } catch (Exception ignored) {
+                }
+            if (s.path("batchPath").isTextual() && Files.exists(Path.of(s.path("batchPath").asText())))
+                batchPath = Path.of(s.path("batchPath").asText());
+            batchText = s.path("batchStatus").asText("Sem lote preparado");
+            batchProtocol = s.path("batchProtocol").asText("");
+            for (JsonNode n : s.path("atividade"))
+                activityLog.append(n.asText() + "\n");
+            activityLog.setCaretPosition(activityLog.getDocument().getLength());
+            persistWorkflow();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void persistWorkflow() {
+        try {
+            ObjectNode s = Store.state(), statuses = Store.JSON.createObjectNode();
+            eventStatuses.forEach((p, v) -> statuses.put(p.toString(), v));
+            ArrayNode paths = Store.JSON.createArrayNode(), batchPathNodes = Store.JSON.createArrayNode();
+            files.forEach(p -> paths.add(p.toString()));
+            batchFiles.forEach(p -> batchPathNodes.add(p.toString()));
+            s.set("eventStatuses", statuses);
+            s.set("workflowFiles", paths);
+            s.set("batchFiles", batchPathNodes);
+            if (batchPath != null)
+                s.put("batchPath", batchPath.toString());
+            s.put("batchStatus", batchText);
+            s.put("batchProtocol", batchProtocol);
+            Store.write(Store.STATE, s);
+        } catch (Exception e) {
+            setStatus("Não foi possível salvar o estado de trabalho");
+        }
+    }
+
+    private void setEventStatus(Path p, String value) {
+        eventStatuses.put(p, value);
+        persistWorkflow();
+        refreshWorkTable();
+    }
+
+    private void setBatchStatus(String value) {
+        batchText = value;
+        if (batchIndicator != null)
+            batchIndicator.setText(value);
+        persistWorkflow();
+    }
+
+    private String batchStatusText() {
+        return batchText;
+    }
+
+    private void recordActivity(String message) {
+        String line = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")) + "  "
+                + message;
+        try {
+            ObjectNode s = Store.state();
+            ArrayNode a = s.withArray("atividade");
+            a.add(line);
+            while (a.size() > 100)
+                a.remove(0);
+            Store.write(Store.STATE, s);
+        } catch (Exception ignored) {
+        }
+        if (activityLog != null) {
+            activityLog.append(line + "\n");
+            activityLog.setCaretPosition(activityLog.getDocument().getLength());
+        }
+    }
+
+    private void refreshWorkTable() {
+        workModel.setRowCount(0);
+        for (Path p : files)
+            workModel.addRow(new Object[] { p.getFileName(), eventStatuses.getOrDefault(p, "Importado") });
+    }
+
+    private void importFiles() {
+        JFileChooser fc = new JFileChooser();
+        fc.setMultiSelectionEnabled(true);
+        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("XML DeRE", "xml"));
+        if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            int added = 0;
+            for (var f : fc.getSelectedFiles()) {
+                Path p = f.toPath();
+                if (!files.contains(p)) {
+                    files.add(p);
+                    eventStatuses.put(p, "Importado");
+                    added++;
+                }
+            }
+            persistWorkflow();
+            refreshWorkTable();
+            setStatus(added + " arquivo(s) importado(s)");
+            recordActivity("Importados " + added + " XML(s)");
+        }
+    }
+
+    private void manageCertificates() {
+        try {
+            ObjectNode c = Store.config();
+            ArrayNode profiles = c.withArray("certificados");
+            StringBuilder text = new StringBuilder("Certificados cadastrados:\n");
+            for (int i = 0; i < profiles.size(); i++)
+                text.append(i + 1).append(". ").append(profiles.get(i).path("empresa").asText()).append(" — ")
+                        .append(profiles.get(i).path("arquivo").asText()).append('\n');
+            if (profiles.isEmpty())
+                text.append("(nenhum)\n");
+            Object[] opts = { "Adicionar", "Remover", "Fechar" };
+            int choice = JOptionPane.showOptionDialog(this, new JScrollPane(new JTextArea(text.toString(), 10, 64)),
+                    "Certificados por empresa", JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, opts,
+                    opts[0]);
+            if (choice == 0) {
+                JFileChooser fc = new JFileChooser();
+                fc.setFileFilter(
+                        new javax.swing.filechooser.FileNameExtensionFilter("PKCS#12 (.p12, .pfx)", "p12", "pfx"));
+                if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION)
+                    return;
+                String company = JOptionPane.showInputDialog(this, "Nome da empresa ou CNPJ associado:");
+                if (company == null || company.isBlank())
+                    return;
+                ObjectNode profile = Store.JSON.createObjectNode();
+                profile.put("empresa", company.trim());
+                profile.put("arquivo", fc.getSelectedFile().getAbsolutePath());
+                profiles.add(profile);
+                Store.write(Store.CONFIG, c);
+                setStatus("Certificado cadastrado para " + company);
+            } else if (choice == 1 && !profiles.isEmpty()) {
+                String[] labels = new String[profiles.size()];
+                for (int i = 0; i < labels.length; i++)
+                    labels[i] = profiles.get(i).path("empresa").asText();
+                int ix = JOptionPane.showOptionDialog(this, "Selecione o certificado a remover:", "Remover certificado",
+                        JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, labels, labels[0]);
+                if (ix >= 0) {
+                    profiles.remove(ix);
+                    Store.write(Store.CONFIG, c);
+                }
+            }
+        } catch (Exception e) {
+            error(e);
+        }
+    }
+
+    private List<Path> selected() {
+        return new ArrayList<>(files);
+    }
+
+    private void validateAll() {
+        try {
+            if (files.isEmpty())
+                throw new IllegalStateException("Importe pelo menos um evento.");
+            StringBuilder b = new StringBuilder();
+            for (Path p : selected()) {
+                try {
+                    DereService.validateEvent(p);
+                    setEventStatus(p, "Válido");
+                    b.append("✓  ").append(p.getFileName()).append(" — válido\n");
+                } catch (Exception ex) {
+                    setEventStatus(p, "Erro na validação");
+                    throw ex;
+                }
+            }
+            JOptionPane.showMessageDialog(this, b.toString(), "Validação XSD", JOptionPane.INFORMATION_MESSAGE);
+            setStatus("Validação XSD concluída");
+            recordActivity("XSD validado: " + files.size() + " evento(s)");
+        } catch (Exception e) {
+            error(e);
+        }
+    }
+
+    private void signFiles() {
+        try {
+            List<Path> ps = selected();
+            if (ps.isEmpty())
+                throw new IllegalStateException("Importe pelo menos um evento.");
+            ObjectNode c = Store.config();
+            List<Path> paths = new ArrayList<>();
+            List<String> labels = new ArrayList<>();
+            if (!c.path("certificado").asText().isBlank()) {
+                paths.add(Path.of(c.path("certificado").asText()));
+                labels.add("Padrão • " + paths.getLast().getFileName());
+            }
+            for (JsonNode p : c.path("certificados")) {
+                Path value = Path.of(p.path("arquivo").asText());
+                paths.add(value);
+                labels.add(p.path("empresa").asText() + " • " + value.getFileName());
+            }
+            Path cert;
+            if (paths.isEmpty()) {
+                JFileChooser fc = new JFileChooser();
+                fc.setFileFilter(
+                        new javax.swing.filechooser.FileNameExtensionFilter("PKCS#12 (.p12, .pfx)", "p12", "pfx"));
+                if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION)
+                    return;
+                cert = fc.getSelectedFile().toPath();
+            } else {
+                JComboBox<String> combo = new JComboBox<>(labels.toArray(String[]::new));
+                if (JOptionPane.showConfirmDialog(this, combo, "Selecione o certificado para assinar todos os eventos",
+                        JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
+                    return;
+                cert = paths.get(combo.getSelectedIndex());
+            }
+            JPasswordField pf = new JPasswordField(24);
+            if (JOptionPane.showConfirmDialog(this, pf, "Senha do certificado selecionado",
+                    JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
+                return;
+            char[] pw = pf.getPassword();
+            for (Path p : ps) {
+                DereService.sign(p, cert, pw);
+                setEventStatus(p, "Assinado");
+            }
+            Arrays.fill(pw, '\0');
+            JOptionPane.showMessageDialog(this,
+                    "Eventos assinados: " + ps.size() + "\nCertificado: " + cert.getFileName());
+            setStatus("Assinatura XMLDSig concluída");
+            recordActivity("Assinados " + ps.size() + " evento(s) com " + cert.getFileName());
+        } catch (Exception e) {
+            error(e);
+        }
+    }
+
+    private void buildBatch() {
+        try {
+            List<Path> ps = selected();
+            if (ps.isEmpty())
+                throw new IllegalStateException("Importe eventos antes de montar o lote.");
+            ObjectNode c = Store.config();
+            String number = JOptionPane.showInputDialog(this, "CNPJ da empresa (14 caracteres):",
+                    c.path("cnpj").asText());
+            if (number == null)
+                return;
+            JFileChooser fc = new JFileChooser();
+            fc.setSelectedFile(new java.io.File("lote-dere.xml"));
+            if (fc.showSaveDialog(this) != JFileChooser.APPROVE_OPTION)
+                return;
+            batchPath = fc.getSelectedFile().toPath();
+            DereService.makeBatch(ps, number, batchPath);
+            batchFiles = new ArrayList<>(ps);
+            batchProtocol = "";
+            c.put("cnpj", number.trim());
+            Store.write(Store.CONFIG, c);
+            for (Path p : ps)
+                setEventStatus(p, "No lote");
+            setBatchStatus("Lote pronto: " + batchPath.getFileName());
+            JOptionPane.showMessageDialog(this, "Lote montado e validado:\n" + batchPath);
+            setStatus("Lote pronto: " + batchPath.getFileName());
+            recordActivity("Lote criado com " + ps.size() + " evento(s): " + batchPath.getFileName());
+        } catch (Exception e) {
+            error(e);
+        }
+    }
+
+    private void submitBatch() {
+        try {
+            if (batchPath == null || !Files.exists(batchPath)) {
+                JFileChooser fc = new JFileChooser();
+                fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("XML", "xml"));
+                if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION)
+                    return;
+                batchPath = fc.getSelectedFile().toPath();
+            }
+            String protocol = DereService.submit(batchPath);
+            String cnpj = Store.config().path("cnpj").asText();
+            Store.record(protocol, cnpj, batchPath.toString());
+            batchProtocol = protocol;
+            setBatchStatus("Recebido • " + protocol);
+            for (Path p : batchFiles)
+                setEventStatus(p, "Transmitido • " + protocol);
+            refreshTable();
+            setStatus("Lote recebido • protocolo " + protocol);
+            recordActivity("Transmitido lote; protocolo " + protocol);
+            JOptionPane.showMessageDialog(this, "Lote recebido pela DeRE.\nProtocolo: " + protocol
+                    + "\nA aceitação final depende da consulta de processamento.");
+        } catch (Exception e) {
+            error(e);
+        }
+    }
+
+    private void refreshTable() {
+        table.setRowCount(0);
+        ArrayNode a = Store.state().withArray("lotes");
+        for (JsonNode n : a)
+            table.addRow(new Object[] { n.path("protocolo").asText(), n.path("cnpj").asText(),
+                    n.path("enviadoEm").asText(), n.path("status").asText() });
+    }
+
+    private void consultSelected() {
+        JTable t = findTable();
+        if (t == null || t.getSelectedRow() < 0) {
+            JOptionPane.showMessageDialog(this, "Selecione um protocolo da tabela.");
+            return;
+        }
+        doConsult(table.getValueAt(t.getSelectedRow(), 0).toString());
+    }
+
+    private JTable findTable() {
+        for (Component c : getContentPane().getComponents())
+            if (c instanceof JTabbedPane tabs) {
+                for (int i = 0; i < tabs.getTabCount(); i++)
+                    if (tabs.getTitleAt(i).contains("Protocolos")) {
+                        return find(tabs.getComponentAt(i));
+                    }
+            }
+        return null;
+    }
+
+    private JTable find(Component c) {
+        if (c instanceof JTable t)
+            return t;
+        if (c instanceof Container p)
+            for (Component k : p.getComponents()) {
+                JTable t = find(k);
+                if (t != null)
+                    return t;
+            }
+        return null;
+    }
+
+    private void doConsult(String protocol) {
+        try {
+            String body = DereService.consult(protocol);
+            Files.createDirectories(Store.OUT);
+            String safe = protocol.replaceAll("[^A-Za-z0-9._-]", "_");
+            boolean xml = body.stripLeading().startsWith("<");
+            Path saved = Store.OUT.resolve(safe + (xml ? ".xml" : ".json"));
+            Files.writeString(saved, body);
+            String status;
+            String display;
+            if (xml) {
+                org.w3c.dom.Document d = DereService.parse(body);
+                org.w3c.dom.NodeList desc = d.getElementsByTagNameNS("*", "descResposta"),
+                        codes = d.getElementsByTagNameNS("*", "cdResposta");
+                String code = codes.getLength() > 0 ? codes.item(0).getTextContent().trim() : "";
+                status = desc.getLength() > 0 ? desc.item(0).getTextContent().trim() : statusFor(code);
+                status = status.isBlank() ? statusFor(code) : status;
+                DereService.validate(saved, "retornoLoteDere-v1_0_1.xsd");
+                saveXmlReceipts(d, safe);
+                updateWorkflowStatuses(protocol, status, d, code);
+                display = body;
+            } else {
+                JsonNode result = Store.JSON.readTree(body);
+                status = result.path("situacao").asText(result.path("status").asText("Consultado"));
+                saveReceipts(result, safe);
+                updateWorkflowStatuses(protocol, status, null, "");
+                display = Store.JSON.writerWithDefaultPrettyPrinter().writeValueAsString(result);
+            }
+            ObjectNode s = Store.state();
+            for (JsonNode n : s.withArray("lotes"))
+                if (n.path("protocolo").asText().equals(protocol)) {
+                    ((ObjectNode) n).put("status", status);
+                    ((ObjectNode) n).put("retorno", saved.toString());
+                }
+            Store.write(Store.STATE, s);
+            refreshTable();
+            JTextArea area = new JTextArea(display, 22, 78);
+            area.setEditable(false);
+            area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+            JOptionPane.showMessageDialog(this, new JScrollPane(area), "Retorno do protocolo " + protocol,
+                    JOptionPane.INFORMATION_MESSAGE);
+            setStatus("Consulta salva em " + saved);
+            recordActivity("Consultado protocolo " + protocol + ": " + status);
+        } catch (Exception e) {
+            error(e);
+        }
+    }
+
+    private void updateWorkflowStatuses(String protocol, String loteStatus, org.w3c.dom.Document result, String code) {
+        if (!protocol.equals(batchProtocol))
+            return;
+        List<String> perEvent = new ArrayList<>();
+        if (result != null) {
+            org.w3c.dom.NodeList blocks = result.getElementsByTagNameNS("*", "retornoEventos");
+            if (blocks.getLength() > 0) {
+                org.w3c.dom.Node parent = blocks.item(0);
+                for (org.w3c.dom.Node n = parent.getFirstChild(); n != null; n = n.getNextSibling())
+                    if (n instanceof org.w3c.dom.Element el && "evento".equals(el.getLocalName())) {
+                        org.w3c.dom.NodeList desc = el.getElementsByTagNameNS("*", "descResposta");
+                        String detail = desc.getLength() > 0 ? desc.item(0).getTextContent().trim() : "";
+                        perEvent.add(detail.isBlank() ? loteStatus : detail);
+                    }
+            }
+        }
+        for (int i = 0; i < batchFiles.size(); i++) {
+            String value = i < perEvent.size() ? perEvent.get(i) : (result == null ? loteStatus : statusFor(code));
+            setEventStatus(batchFiles.get(i), value);
+        }
+        if (!loteStatus.isBlank())
+            setBatchStatus(loteStatus + (batchProtocol.isBlank() ? "" : " • " + batchProtocol));
+    }
+
+    private String statusFor(String code) {
+        return switch (code) {
+            case "1" -> "Aguardando processamento";
+            case "2" -> "Processado com sucesso";
+            case "3" -> "Processado com erros";
+            case "4" -> "Consulta não executada";
+            case "5" -> "Protocolo não encontrado";
+            case "7" -> "Lote não recebido";
+            case "9" -> "Erro interno";
+            default -> "Consultado";
+        };
+    }
+
+    private void saveReceipts(JsonNode root, String protocol) throws Exception {
+        List<JsonNode> stack = new ArrayList<>();
+        stack.add(root);
+        java.util.concurrent.atomic.AtomicInteger ix = new java.util.concurrent.atomic.AtomicInteger();
+        String safe = protocol.replaceAll("[^A-Za-z0-9._-]", "_");
+        while (!stack.isEmpty()) {
+            JsonNode n = stack.remove(stack.size() - 1);
+            if (n.isObject()) {
+                n.fields().forEachRemaining(e -> {
+                    if (e.getValue().isContainerNode())
+                        stack.add(e.getValue());
+                    else if (e.getKey().toLowerCase(Locale.ROOT).contains("recibo")
+                            && !e.getValue().asText().isBlank()) {
+                        try {
+                            Files.writeString(Store.OUT.resolve(safe + "-recibo-" + ix.incrementAndGet() + ".txt"),
+                                    e.getValue().asText());
+                        } catch (Exception ignored) {
+                        }
+                    }
+                });
+            } else if (n.isArray())
+                n.forEach(stack::add);
+        }
+    }
+
+    private void saveXmlReceipts(org.w3c.dom.Document doc, String protocol) throws Exception {
+        org.w3c.dom.NodeList all = doc.getElementsByTagName("*");
+        int ix = 0;
+        for (int i = 0; i < all.getLength(); i++) {
+            org.w3c.dom.Element e = (org.w3c.dom.Element) all.item(i);
+            if (e.getLocalName() != null && e.getLocalName().toLowerCase(Locale.ROOT).contains("recibo")) {
+                String value = e.getTextContent().trim();
+                if (!value.isBlank())
+                    Files.writeString(Store.OUT.resolve(protocol + "-recibo-" + (++ix) + ".txt"), value);
+            }
+        }
+    }
 }
