@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<DeRE xmlns="http://www.dere.gov.br/schemas/evtInfoContrib/v1_0_1">
+      
+    <evtInfoContrib id="DeRE10011000000000000002026101715362600001">
+            
+        <ideEvento>
+                  
+            <tpOper>1</tpOper>
+                  
+            <tpAmb>2</tpAmb>
+                  
+            <aplicEmi>1</aplicEmi>
+                  
+            <verAplic>1.0.0</verAplic>
+                
+        </ideEvento>
+            
+        <ideContrib>
+                  
+            <nrInsc>00000000</nrInsc>
+                
+        </ideContrib>
+            
+        <idePeriodo>
+                  
+            <iniValid>2026-01-01</iniValid>
+                
+        </idePeriodo>
+            
+        <infoContrib>
+                  
+            <regTribPrinc>9</regTribPrinc>
+                  
+            <indNatTrib>0</indNatTrib>
+                
+        </infoContrib>
+          
+    </evtInfoContrib>
+    
+    <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
+        <SignedInfo>
+            <CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+            <SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+            <Reference URI="#DeRE10011000000000000002026101715362600001">
+                <Transforms>
+                    <Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+                    <Transform Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+                </Transforms>
+                <DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+                <DigestValue>eGcqcJ5WSwfd7MzqKtTIZGPCBfa/M65vmRN71Q7Lx0g=</DigestValue>
+            </Reference>
+        </SignedInfo>
+        <SignatureValue>Q6jYvxCZlXapWwN9M2z7/Ts2FjRzIV2RSbGLpK3KS/LhpgzYAWo3lZZgbnIe4MTicKycm7JCQ9EZ&#13;
+vvYOXUIsbbqCqFEVtfi3I6dF3YFH2EVhdaUC00nM5LVXHtG0p1cSlbNKgLuzKf+Nm++D3fI3RM9f&#13;
+b5Um3WxJQZCkdxrLaorQFV/94mrJZ8M8qhIuZdJZYr2FXzorjaYZKz1lqic5t5t973tpo2iGsUeS&#13;
+wohlmSujjYWP7ke+UtYHcm5Ylg8bXvFFh6G2/tZKyZqoIwCnO0QQbuXbLeX679rH76hmoZqx03NW&#13;
+f+DHCcbJBq4aS8Jtt2kXNkF2cq8QLzaJo8MUxQ==</SignatureValue>
+        <KeyInfo>
+            <X509Data>
+                <X509Certificate>MIIDgTCCAmmgAwIBAgIIGwzJ/3hoaXEwDQYJKoZIhvcNAQELBQAwXjELMAkGA1UEBhMCQlIxFDAS&#13;
+BgNVBAoTC1Rlc3RlIExvY2FsMRgwFgYDVQQLEw9EZXNlbnZvbHZpbWVudG8xHzAdBgNVBAMTFkNl&#13;
+cnRpZmljYWRvIERlUkUgVGVzdGUwHhcNMjYxMDE3MTc1NzQ5WhcNMjcxMDE3MTc1NzQ5WjBeMQsw&#13;
+CQYDVQQGEwJCUjEUMBIGA1UEChMLVGVzdGUgTG9jYWwxGDAWBgNVBAsTD0Rlc2Vudm9sdmltZW50&#13;
+bzEfMB0GA1UEAxMWQ2VydGlmaWNhZG8gRGVSRSBUZXN0ZTCCASIwDQYJKoZIhvcNAQEBBQADggEP&#13;
+ADCCAQoCggEBAJY29v9G8uwkJ6LcOGMYkqYn1v9qOUWRPnnSGmne+2m7XLvfj89qCfYLDfDb+V3O&#13;
+6ZGVCBrfJUQPvauA45VCyyqoOXNQU1CfzfXBurdXrQQf1TBVf/CyqsjcPkaLAz1aB/SswWid2RRI&#13;
+sIfesJXD7xTMO1eaTeqQBNRQtNFR3qeUZ1zxdwSWe3YFih2yvAc5m0JZdsf/83Y8CGJKC/oK5t2Z&#13;
+m5LHZ4VyuKLg6P+48MTgjoAMxnfb6VbuotyId9UKRwDrh/nbgdiSEOYkHR2mctr7X/v8XoNZwvp8&#13;
+R4HlwsGZtH4iHkiwdd6XGL9CNDPpbPaBcNGX9u+pGPKVH2Vv73ECAwEAAaNDMEEwHQYDVR0OBBYE&#13;
+FOR+x5mYRlzlgGsDKywlQ0Qh8mH4MAsGA1UdDwQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDAjAN&#13;
+BgkqhkiG9w0BAQsFAAOCAQEAPsc6PYdKO6C+hkznl9qrQieGYuJxeWvzeGYcMBLLardjXffTsoG3&#13;
+eSt3IVJbZ14THVSbGvoQle6MwWuMmsrrCGl1hxSzHEulwZX0teDtOBL/HRi5lDYKolxEsYWqy/Mc&#13;
+99jGUZc1PZV5Q6ommNjAHKXc8gKBFgfFwIAXurVCIPuk+sFdIfuw5Nz/ZKXn3ieWWc3aDEsCaQWf&#13;
+hI+Phhd0HD7A2FeCOpkztf3jqhbPS8ZI0EhwmIqIUnsvN7xBXc5l4lzaOMNzjStHr62xCWKZHo21&#13;
+ZqmYv0tcFiSHdrdE4QDWOpGzt97CdseFob2YS0mJLxiogmff9wwRN3yUYzeUHA==</X509Certificate>
+            </X509Data>
+        </KeyInfo>
+    </Signature>
+</DeRE>
