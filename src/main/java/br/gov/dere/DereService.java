@@ -24,8 +24,10 @@ import java.time.*;
 import java.util.*;
 
 final class DereService {
-  private static String cachedToken = "", cachedClient = "";
-  private static long tokenExpiresAt = 0;
+  private static final Map<String, CachedToken> tokenCache = new HashMap<>();
+
+  private record CachedToken(String value, long expiresAt) {
+  }
 
   static Document parse(Path p) throws Exception {
     DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
@@ -225,28 +227,33 @@ final class DereService {
   }
 
   static synchronized String token(ObjectNode c) throws Exception {
-    String id = c.path("clientId").asText(), secret = c.path("clientSecret").asText();
+    String environment = c.path("ambiente").asText("Produção Restrita");
+    ObjectNode profile = profile(c, environment);
+    String id = profile.path("clientId").asText(c.path("clientId").asText());
+    String secret = profile.path("clientSecret").asText(c.path("clientSecret").asText());
     if (id.isBlank() || secret.isBlank())
-      throw new IllegalStateException("Configure client ID e client secret em Parâmetros.");
+      throw new IllegalStateException("Configure client ID e client secret para " + environment + " em Parâmetros.");
+    String tokenUrl = tokenEndpoint(environment);
     String fingerprint = Base64.getEncoder().encodeToString(
-        MessageDigest.getInstance("SHA-256").digest((id + ":" + secret).getBytes(StandardCharsets.UTF_8)));
+        MessageDigest.getInstance("SHA-256").digest((tokenUrl + ":" + id + ":" + secret).getBytes(StandardCharsets.UTF_8)));
     long now = System.currentTimeMillis();
-    if (!cachedToken.isBlank() && fingerprint.equals(cachedClient) && now < tokenExpiresAt - 60_000)
-      return cachedToken;
+    CachedToken cached = tokenCache.get(fingerprint);
+    if (cached != null && now < cached.expiresAt() - 60_000)
+      return cached.value();
     String basic = Base64.getEncoder().encodeToString((id + ":" + secret).getBytes(StandardCharsets.UTF_8));
-    HttpRequest req = HttpRequest.newBuilder(URI.create("https://api.receitafederal.gov.br/token"))
+    HttpRequest req = HttpRequest.newBuilder(URI.create(tokenUrl))
         .header("Authorization", "Basic " + basic).header("Content-Type", "application/x-www-form-urlencoded")
         .POST(HttpRequest.BodyPublishers.ofString("grant_type=client_credentials")).build();
     HttpResponse<String> res = HttpClient.newHttpClient().send(req, HttpResponse.BodyHandlers.ofString());
     if (res.statusCode() / 100 != 2)
       throw new IOException("OAuth HTTP " + res.statusCode() + ": " + res.body());
     JsonNode body = Store.JSON.readTree(res.body());
-    cachedToken = body.path("access_token").asText();
-    if (cachedToken.isBlank())
+    String accessToken = body.path("access_token").asText();
+    if (accessToken.isBlank())
       throw new IOException("Resposta OAuth sem access_token: " + res.body());
-    cachedClient = fingerprint;
-    tokenExpiresAt = now + Math.max(60, body.path("expires_in").asLong(3600)) * 1000;
-    return cachedToken;
+    long expiresAt = now + Math.max(60, body.path("expires_in").asLong(3600)) * 1000;
+    tokenCache.put(fingerprint, new CachedToken(accessToken, expiresAt));
+    return accessToken;
   }
 
   static String submit(Path p) throws Exception {
@@ -274,14 +281,38 @@ final class DereService {
   }
 
   static String base(ObjectNode c) {
-    String configured = c.path("apiBase").asText("").trim();
-    boolean prod = c.path("ambiente").asText("Produção Restrita").equals("Produção");
-    if (configured.isBlank())
+    String environment = c.path("ambiente").asText("Produção Restrita");
+    ObjectNode profile = profile(c, environment);
+    String configured = profile.path("apiBase").asText("").trim();
+    if (configured.isBlank() && environment.equals("Produção"))
+      configured = c.path("apiBase").asText("").trim();
+    if (environment.equals("Produção Restrita") && configured.isBlank())
       configured = "https://api.receitafederal.gov.br/prr-dere";
-    if (prod && configured.equals("https://api.receitafederal.gov.br/prr-dere"))
+    if (environment.equals("Produção") && (configured.isBlank() || configured.contains("/prr-dere")))
       throw new IllegalStateException(
-          "Informe a URL base oficial do ambiente de Produção nos parâmetros. A documentação fornecida não especifica essa URL.");
+          "Informe a URL base oficial da API DeRE de Produção nos parâmetros. A documentação fornecida não especifica essa URL.");
     return configured.replaceAll("/+$", "");
+  }
+
+  static String tokenEndpoint(String environment) {
+    return environment.equals("Produção")
+        ? "https://api.receitafederal.gov.br/token"
+        : "https://h-api.receitafederal.gov.br/token";
+  }
+
+  private static ObjectNode profile(ObjectNode config, String environment) {
+    JsonNode profiles = config.path("ambientes");
+    if (profiles.isObject() && profiles.path(environment).isObject())
+      return (ObjectNode) profiles.path(environment);
+    ObjectNode legacy = Store.JSON.createObjectNode();
+    if (config.path("ambiente").asText("Produção Restrita").equals(environment)) {
+      legacy.put("clientId", config.path("clientId").asText(""));
+      legacy.put("clientSecret", config.path("clientSecret").asText(""));
+      String oldBase = config.path("apiBase").asText("");
+      if (!environment.equals("Produção") || !oldBase.contains("/prr-dere"))
+        legacy.put("apiBase", oldBase);
+    }
+    return legacy;
   }
 
   static String consult(String protocol) throws Exception {

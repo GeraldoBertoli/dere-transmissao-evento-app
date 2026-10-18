@@ -236,6 +236,12 @@ final class DereWindow extends JFrame {
 
     private JComponent settings() {
         ObjectNode c = Store.config();
+        String activeEnvironment = c.path("ambiente").asText("Produção Restrita");
+        ObjectNode profiles = c.path("ambientes").isObject()
+                ? ((ObjectNode) c.path("ambientes")).deepCopy()
+                : Store.JSON.createObjectNode();
+        initializeProfile(profiles, c, "Produção Restrita", activeEnvironment);
+        initializeProfile(profiles, c, "Produção", activeEnvironment);
         JPanel outer = new JPanel(new BorderLayout());
         outer.setOpaque(false);
         JPanel p = card(new GridBagLayout());
@@ -246,14 +252,26 @@ final class DereWindow extends JFrame {
         g.gridx = 0;
         g.gridy = 0;
         JComboBox<String> env = new JComboBox<>(new String[] { "Produção Restrita", "Produção" });
-        env.setSelectedItem(c.path("ambiente").asText("Produção Restrita"));
+        env.setSelectedItem(activeEnvironment);
         addField(p, g, "Ambiente DeRE", env);
-        JTextField apiBase = new JTextField(c.path("apiBase").asText("https://api.receitafederal.gov.br/prr-dere"), 32);
+        JTextField apiBase = new JTextField(32);
         addField(p, g, "URL base da API DeRE", apiBase);
-        JTextField client = new JTextField(c.path("clientId").asText(), 28);
+        JTextField tokenUrl = new JTextField(32);
+        tokenUrl.setEditable(false);
+        tokenUrl.setFocusable(false);
+        addField(p, g, "URL de obtenção do token (automática)", tokenUrl);
+        JTextField client = new JTextField(28);
         addField(p, g, "Client ID Receita Integra", client);
-        JPasswordField secret = new JPasswordField(c.path("clientSecret").asText(), 28);
+        JPasswordField secret = new JPasswordField(28);
         addField(p, g, "Client secret", secret);
+        loadProfileFields(profiles, activeEnvironment, apiBase, tokenUrl, client, secret);
+        String[] shownEnvironment = { activeEnvironment };
+        env.addActionListener(e -> {
+            saveProfileFields(profiles, shownEnvironment[0], apiBase, client, secret);
+            String next = (String) env.getSelectedItem();
+            loadProfileFields(profiles, next, apiBase, tokenUrl, client, secret);
+            shownEnvironment[0] = next;
+        });
         JTextField cnpj = new JTextField(c.path("cnpj").asText(), 28);
         addField(p, g, "CNPJ da empresa (14 caracteres)", cnpj);
         JTextField cert = new JTextField(c.path("certificado").asText(), 22);
@@ -277,10 +295,15 @@ final class DereWindow extends JFrame {
         save.addActionListener(e -> {
             try {
                 ObjectNode n = Store.JSON.createObjectNode();
-                n.put("ambiente", (String) env.getSelectedItem());
-                n.put("apiBase", apiBase.getText().trim());
-                n.put("clientId", client.getText().trim());
-                n.put("clientSecret", new String(secret.getPassword()));
+                String selectedEnvironment = (String) env.getSelectedItem();
+                saveProfileFields(profiles, selectedEnvironment, apiBase, client, secret);
+                n.put("ambiente", selectedEnvironment);
+                n.set("ambientes", profiles);
+                // Keep legacy top-level fields synchronized for older app versions.
+                ObjectNode selectedProfile = (ObjectNode) profiles.path(selectedEnvironment);
+                n.put("apiBase", selectedProfile.path("apiBase").asText(""));
+                n.put("clientId", selectedProfile.path("clientId").asText(""));
+                n.put("clientSecret", selectedProfile.path("clientSecret").asText(""));
                 n.put("cnpj", cnpj.getText().trim());
                 n.put("certificado", cert.getText().trim());
                 n.set("certificados", Store.config().path("certificados").deepCopy());
@@ -295,11 +318,47 @@ final class DereWindow extends JFrame {
         g.gridy++;
         p.add(save, g);
         JLabel warning = hint(
-                "A URL padrão é a de Produção Restrita documentada. Confirme a URL oficial antes de usar Produção. Credenciais em ~/.dere-desktop/config.json.");
+                "Token e credenciais variam por ambiente. A API DeRE de Produção exige URL oficial informada por você. Credenciais em ~/.dere-desktop/config.json.");
         g.gridy++;
         p.add(warning, g);
         outer.add(p, BorderLayout.NORTH);
         return outer;
+    }
+
+    private void initializeProfile(ObjectNode profiles, ObjectNode config, String environment, String activeEnvironment) {
+        if (profiles.path(environment).isObject())
+            return;
+        ObjectNode profile = Store.JSON.createObjectNode();
+        if (activeEnvironment.equals(environment)) {
+            profile.put("clientId", config.path("clientId").asText(""));
+            profile.put("clientSecret", config.path("clientSecret").asText(""));
+            String oldBase = config.path("apiBase").asText("");
+            if (!environment.equals("Produção") || !oldBase.contains("/prr-dere"))
+                profile.put("apiBase", oldBase);
+        }
+        if (environment.equals("Produção Restrita") && profile.path("apiBase").asText("").isBlank())
+            profile.put("apiBase", "https://api.receitafederal.gov.br/prr-dere");
+        profiles.set(environment, profile);
+    }
+
+    private void loadProfileFields(ObjectNode profiles, String environment, JTextField apiBase, JTextField tokenUrl,
+            JTextField client, JPasswordField secret) {
+        ObjectNode profile = (ObjectNode) profiles.path(environment);
+        apiBase.setText(profile.path("apiBase").asText(""));
+        tokenUrl.setText(DereService.tokenEndpoint(environment));
+        client.setText(profile.path("clientId").asText(""));
+        secret.setText(profile.path("clientSecret").asText(""));
+    }
+
+    private void saveProfileFields(ObjectNode profiles, String environment, JTextField apiBase, JTextField client,
+            JPasswordField secret) {
+        ObjectNode profile = profiles.path(environment).isObject()
+                ? (ObjectNode) profiles.path(environment)
+                : Store.JSON.createObjectNode();
+        profile.put("apiBase", apiBase.getText().trim());
+        profile.put("clientId", client.getText().trim());
+        profile.put("clientSecret", new String(secret.getPassword()));
+        profiles.set(environment, profile);
     }
 
     private void addField(JPanel p, GridBagConstraints g, String label, JComponent input) {
